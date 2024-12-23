@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from typing import List, Tuple, Dict
 
-class DONEncoder(nn.Module):
+class DCNNEncoder(nn.Module):
     def __init__(self,vocab_size:int,embed_dim: int = 300,hidden_dim: int = 256):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size,embed_dim)
@@ -64,7 +64,7 @@ class Discriminator(nn.Module):
     def __init__(self,vocab_size:int,hidden_dim: int = 256):
         super().__init__()
 
-        self.encoder = DONEncoder(vocab_size,hidden_dim)
+        self.encoder = DCNNEncoder(vocab_size,hidden_dim)
         self.classifier = nn.Sequential(
             nn.Linear(hidden_dim*4,hidden_dim),
             nn.ReLU(),
@@ -72,5 +72,83 @@ class Discriminator(nn.Module):
             nn.Linear(hidden_dim,1),
             nn.Sigmoid()
         )
+
+    def forward(self,x):
+        features = self.encoder(x)
+        return self.classifier(features)
+    
+
+class CRFLayer(nn.Module):
+    def __init__ (self,num_tags:int):
+        super().__init__()
+        self.num_tags = num_tags
+        self.transtions = nn.Parameter(torch.randn(num_tags,num_tags))
+
+    def forward(self,emissons,tags,mask = None):
+        # compute the CRF loss
+        return self._compiled_loss(emissons,tags,mask)
+    
+    def decode(self,emissinos,mask = None):
+        # Viterbi decoding
+        return self.viterbi_decode(emissinos,mask)
+    
+
+class HighPerformanceNLP(nn.Module):
+    def __init__(self, vocab_size: int, num_tags: int, hidden_dim: int = 256):
+        super().__init__()
+        
+        # Main components
+        self.encoder = DCNNEncoder(vocab_size, hidden_dim)
+        self.generator = Generator(hidden_dim, vocab_size)
+        self.discriminator = Discriminator(vocab_size)
+        self.crf = CRFLayer(num_tags)
+        
+        # Task-specific heads
+        self.classification_head = nn.Linear(hidden_dim * 4, num_tags)
+        self.language_model_head = nn.Linear(hidden_dim * 4, vocab_size)
+        
+    def forward(self, x, task='classification'):
+        features = self.encoder(x)
+        
+        if task == 'classification':
+            logits = self.classification_head(features)
+            return logits
+        elif task == 'generation':
+            return self.generator(features)
+        elif task == 'discrimination':
+            return self.discriminator(x)
+        else:
+            raise ValueError(f"Unknown task: {task}")
+
+# Training utilities
+class TextDataset(Dataset):
+    def __init__(self, texts: List[str], labels: List[int], vocab: Dict[str, int]):
+        self.texts = texts
+        self.labels = labels
+        self.vocab = vocab
+        
+    def __len__(self):
+        return len(self.texts)
+        
+    def __getitem__(self, idx):
+        text = torch.tensor([self.vocab.get(word, 0) for word in self.texts[idx].split()])
+        label = torch.tensor(self.labels[idx])
+        return text, label
+
+def train_model(model, train_loader, optimizer, epochs=10, device='cuda'):
+    model.train()
+    for epoch in range(epochs):
+        total_loss = 0
+        for batch_idx, (data, target) in enumerate(train_loader):
+            data, target = data.to(device), target.to(device)
+            optimizer.zero_grad()
+            output = model(data)
+            loss = F.cross_entropy(output, target)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            
+        print(f'Epoch: {epoch}, Loss: {total_loss/len(train_loader)}')
+
 
 
