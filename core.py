@@ -37,3 +37,40 @@ class DONEncoder(nn.Module):
         x = self.dropout(x)
 
         return x
+    
+
+class  Generator(nn.Module):
+    def __init__(self, latent_dim: int, vocab_size: int, hidden_dim: int = 256):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.vocab_size = vocab_size
+        
+        self.fc1 = nn.Linear(latent_dim,hidden_dim * 4 )
+        self.fc2 = nn.Linear(hidden_dim*4,hidden_dim*8)
+        self.fc3 = nn.Linear(hidden_dim * 8,vocab_size)
+
+        self.dropout  = nn.Dropout(0.3)
+
+    def forward(self,z):
+        x = F.relu(self.norm1(self.fc1(z)))
+        x = self.dropout(x)
+        x = F.relu(self.norm2(self.fc2(x)))
+        x = self.dropout(x)
+        x = self.fc3(x)
+        return F.log_softmax(x,dim =-1)
+    
+
+class Discriminator(nn.Module):
+    def __init__(self,vocab_size:int,hidden_dim: int = 256):
+        super().__init__()
+
+        self.encoder = DONEncoder(vocab_size,hidden_dim)
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim*4,hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(hidden_dim,1),
+            nn.Sigmoid()
+        )
+
+
